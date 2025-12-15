@@ -2,6 +2,8 @@ import streamlit as st
 from ultralytics import YOLO
 import os
 from pathlib import Path
+import cv2
+import shutil
 
 st.set_page_config(page_title="Tree Detection", layout="wide")
 
@@ -26,6 +28,25 @@ uploaded_file = st.file_uploader(
     type=["jpg", "jpeg", "png", "mp4", "avi", "mov"]
 )
 
+def reencode_video(input_video, output_video):
+    cap = cv2.VideoCapture(str(input_video))
+
+    width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps    = cap.get(cv2.CAP_PROP_FPS)
+
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # ✅ universal codec
+    out = cv2.VideoWriter(str(output_video), fourcc, fps, (width, height))
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+        out.write(frame)
+
+    cap.release()
+    out.release()
+
 if st.button("Run Detection") and uploaded_file:
     input_path = os.path.join(UPLOAD_FOLDER, uploaded_file.name)
 
@@ -48,19 +69,30 @@ if st.button("Run Detection") and uploaded_file:
     output_dir = Path(project_path) / "run"
     output_files = list(output_dir.glob("*"))
 
-    if output_files:
-        output_file = output_files[0]
-
-        if uploaded_file.type.startswith("image"):
-            st.image(str(output_file), caption="Detected Image", use_column_width=True)
-        else:
-            st.video(str(output_file))
-
-        with open(output_file, "rb") as f:
-            st.download_button(
-                "⬇ Download Result",
-                f,
-                file_name=output_file.name
-            )
-    else:
+    if not output_files:
         st.error("No output generated.")
+        st.stop()
+
+    raw_output = output_files[0]
+
+    # IMAGE RESULT
+    if uploaded_file.type.startswith("image"):
+        st.image(str(raw_output), caption="Detected Image", use_column_width=True)
+        with open(raw_output, "rb") as f:
+            st.download_button("⬇ Download Image", f, file_name=raw_output.name)
+
+    # VIDEO RESULT (FIXED)
+    else:
+        fixed_video = raw_output.with_suffix(".mp4")
+
+        reencode_video(raw_output, fixed_video)
+
+        st.video(str(fixed_video))
+
+        with open(fixed_video, "rb") as f:
+            st.download_button(
+                "⬇ Download Video (MP4)",
+                f,
+                file_name=fixed_video.name,
+                mime="video/mp4"
+            )
