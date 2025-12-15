@@ -2,104 +2,65 @@ import streamlit as st
 from ultralytics import YOLO
 import os
 from pathlib import Path
-import cv2
 
-# =====================================
-# STREAMLIT CONFIG
-# =====================================
 st.set_page_config(page_title="Tree Detection", layout="wide")
 
-# Folders for uploads, outputs, and model
 UPLOAD_FOLDER = "uploads"
 OUTPUT_FOLDER = "outputs"
-MODEL_PATH = "best.pt"  # model is inside your GitHub repo
+MODEL_PATH = "best.pt"
+
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-# =====================================
-# LOAD YOLOv8 MODEL
-# =====================================
 @st.cache_resource
 def load_model():
     return YOLO(MODEL_PATH)
 
 model = load_model()
-st.success("✅ YOLOv8 Model Loaded from Repo")
+st.success("✅ YOLOv8 Model Loaded")
 
-# =====================================
-# APP UI
-# =====================================
-st.title("🌳 Tree Detection with YOLOv8 (Images & Videos)")
+st.title("🌳 Tree Detection (Images & Videos)")
 
-uploaded_file = st.file_uploader("Upload an Image or Video", type=["jpg", "jpeg", "png", "mp4", "avi", "mov"])
-uploaded_folder = st.text_input("Or enter path to folder of images/videos (optional)")
+uploaded_file = st.file_uploader(
+    "Upload Image or Video",
+    type=["jpg", "jpeg", "png", "mp4", "avi", "mov"]
+)
 
-# =====================================
-# RUN DETECTION
-# =====================================
-if st.button("Run Detection"):
-    # Determine source path
-    if uploaded_file:
-        file_path = os.path.join(UPLOAD_FOLDER, uploaded_file.name)
-        with open(file_path, "wb") as f:
-            f.write(uploaded_file.read())
-        source_path = file_path
-    elif uploaded_folder and os.path.exists(uploaded_folder):
-        source_path = uploaded_folder
-    else:
-        st.error("Please upload a file or provide a valid folder path.")
-        st.stop()
+if st.button("Run Detection") and uploaded_file:
+    input_path = os.path.join(UPLOAD_FOLDER, uploaded_file.name)
 
-    # Create output folder
-    project_path = os.path.join(OUTPUT_FOLDER, "tree_results")
+    with open(input_path, "wb") as f:
+        f.write(uploaded_file.read())
+
+    project_path = os.path.join(OUTPUT_FOLDER, "results")
     os.makedirs(project_path, exist_ok=True)
 
-    # Run YOLOv8 prediction
-    with st.spinner("Running YOLOv8 detection..."):
-        results = model.predict(
-            source=source_path,
+    with st.spinner("Processing..."):
+        model.predict(
+            source=input_path,
             conf=0.25,
             save=True,
             project=project_path,
-            name="run"
+            name="run",
+            verbose=False
         )
 
-    st.success("✅ Detection Complete!")
+    output_dir = Path(project_path) / "run"
+    output_files = list(output_dir.glob("*"))
 
-    # Check if it's an image
-    if uploaded_file and uploaded_file.type.startswith("image"):
-        result_folder = Path(project_path) / "run"
-        result_images = list(result_folder.glob("*"))
-        if len(result_images) > 0:
-            result_img_path = result_images[0]
-            st.image(str(result_img_path), caption="Detected Trees", use_column_width=True)
-            with open(result_img_path, "rb") as f:
-                st.download_button(
-                    "⬇ Download Result Image",
-                    f,
-                    file_name=f"detected_{uploaded_file.name}",
-                    mime="image/png"
-                )
+    if output_files:
+        output_file = output_files[0]
+
+        if uploaded_file.type.startswith("image"):
+            st.image(str(output_file), caption="Detected Image", use_column_width=True)
         else:
-            st.warning("Result image not found. Check your model output path.")
+            st.video(str(output_file))
 
-    # If uploaded file is video
-    elif uploaded_file and uploaded_file.type.startswith("video"):
-        result_folder = Path(project_path) / "run"
-        result_videos = list(result_folder.glob("*"))
-        if len(result_videos) > 0:
-            result_video_path = result_videos[0]
-            st.video(str(result_video_path))
-            with open(result_video_path, "rb") as f:
-                st.download_button(
-                    "⬇ Download Result Video",
-                    f,
-                    file_name=f"detected_{uploaded_file.name}",
-                    mime="video/mp4"
-                )
-        else:
-            st.warning("Result video not found. Check your model output path.")
-
+        with open(output_file, "rb") as f:
+            st.download_button(
+                "⬇ Download Result",
+                f,
+                file_name=output_file.name
+            )
     else:
-        st.write(f"Results saved in folder: {os.path.join(project_path, 'run')}")
-        st.write("You can download the processed files directly from this folder.")
+        st.error("No output generated.")
